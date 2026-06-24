@@ -108,6 +108,46 @@ public class ExperimentService {
         return result;
     }
 
+    /**
+     * Save a brand-new document (fresh, non-existent id) that has <strong>both</strong> a preset id
+     * and a preset {@code version}. This is the "constructed an object with id and version" case: the
+     * doc does not exist, but a non-null version usually tells Spring Data "this is an existing entity
+     * at version N". Reflection sets the version so this stays compilable on the no-version baseline.
+     */
+    public Map<String, Object> saveNewWithPresetIdAndVersion(String name, String category,
+                                                             BigDecimal price, int stock, Long version) {
+        String id = new org.bson.types.ObjectId().toHexString();
+        Product product = new Product(id, name, category, price, stock);
+        Instant now = Instant.now();
+        product.setCreatedAt(now);
+        product.setUpdatedAt(now);
+        boolean versionSet = trySetVersion(product, version);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("presetId", id);
+        result.put("presetVersion", versionSet ? version : "(no @Version property on this branch)");
+        try {
+            repository.save(product);
+            result.put("outcome", "SAVED");
+            result.put("storedVersionAfter", mongoTemplateService.storedVersion(id));
+        } catch (RuntimeException ex) {
+            result.put("outcome", "FAILED");
+            result.put("exception", ex.getClass().getName());
+            result.put("message", rootMessage(ex));
+        }
+        return result;
+    }
+
+    /** Sets {@code version} via reflection if the entity has the property (baseline has none). */
+    private static boolean trySetVersion(Product product, Long version) {
+        try {
+            product.getClass().getMethod("setVersion", Long.class).invoke(product, version);
+            return true;
+        } catch (ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
     private Map<String, Object> saveAndReport(Product product, String id) {
         try {
             repository.save(product);

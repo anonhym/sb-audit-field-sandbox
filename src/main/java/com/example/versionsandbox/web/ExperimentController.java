@@ -67,6 +67,20 @@ public class ExperimentController {
         return experimentService.saveNewWithPresetId(name, category, price, stock);
     }
 
+    /**
+     * Save a brand-new document (non-existent id) that has BOTH a preset id and a preset version —
+     * the "object built with id and version" case. The doc does not exist; a non-null version usually
+     * means "existing entity at version N".
+     */
+    @PostMapping("/save-new-with-id-and-version")
+    public Map<String, Object> saveNewWithIdAndVersion(@RequestParam String name,
+                                                       @RequestParam(defaultValue = "misc") String category,
+                                                       @RequestParam(defaultValue = "9.99") BigDecimal price,
+                                                       @RequestParam(defaultValue = "1") int stock,
+                                                       @RequestParam(defaultValue = "5") Long version) {
+        return experimentService.saveNewWithPresetIdAndVersion(name, category, price, stock, version);
+    }
+
     // ---- Lower-level MongoTemplate update operations ----
 
     @PostMapping("/{id}/inc-stock")
