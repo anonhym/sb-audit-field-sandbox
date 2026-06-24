@@ -19,4 +19,4 @@ POST /api/experiments/{id}/load-then-save               -> insert? update? lock 
 POST /api/experiments/{id}/concurrent-update
 ```
 
-**Observed:** _(filled in from the live run — see APPROACHES.md matrix on `main`)_
+**Observed (live):** Q1 legacy `load-then-save` → ❌ `OptimisticLockingFailureException` ("with version 1 … modified meanwhile"). The callback set `version=0`, so the versioned update filtered on `{_id, version:0}` — which does **not** match a document whose `version` field is absent — and 0 documents were modified. The duplicate-key error of `approach/naive` is merely traded for a lock error; the legacy doc still cannot be saved. New docs (Q3) lock fine. Conclusion: defaulting the version on read is fundamentally incompatible with the no-back-fill constraint, because only `version:null` matches an absent field and `null` routes straight back to an insert.
