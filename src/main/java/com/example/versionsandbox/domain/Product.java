@@ -4,19 +4,19 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
- * The sandbox aggregate — <strong>baseline (no version field)</strong>.
+ * approach/naive — add {@code @Version} and <strong>nothing else</strong>. This is the failure
+ * control.
  *
- * <p>This is "production as it is today": documents are stored with no {@code version} field, and
- * the entity has no {@code @Version} property. Saving an existing document is a plain by-{@code _id}
- * upsert with last-write-wins semantics and <em>no</em> optimistic locking.
- *
- * <p>Each {@code approach/*} branch adds {@code @Version} via a different strategy to migrate the
- * existing version-less documents <em>without a bulk back-fill</em> (a business restriction). The
- * shared test harness in this project never reads {@code version} off this class — it reads it from
- * the stored BSON — so the harness compiles unchanged on this baseline and on every branch.
+ * <p>Spring Data decides insert-vs-update from the version value: a {@code null} version (which is
+ * exactly what an existing, never-back-filled document loads as) is treated as "new", so
+ * {@code save()} is routed to an <em>insert</em> and the already-present {@code _id} triggers a
+ * duplicate-key error. New documents created through the app are fine (they get {@code version=0}
+ * and lock correctly); only the legacy, version-less documents break. The other {@code approach/*}
+ * branches exist to fix this without a back-fill.
  */
 @Document(collection = "products")
 public class Product {
@@ -31,6 +31,9 @@ public class Product {
     private BigDecimal price;
 
     private int stock;
+
+    @Version
+    private Long version;
 
     private Instant createdAt;
 
@@ -87,6 +90,14 @@ public class Product {
         this.stock = stock;
     }
 
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -105,7 +116,7 @@ public class Product {
 
     @Override
     public String toString() {
-        return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d}"
-                .formatted(id, name, category, price, stock);
+        return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d, version=%s}"
+                .formatted(id, name, category, price, stock, version);
     }
 }
