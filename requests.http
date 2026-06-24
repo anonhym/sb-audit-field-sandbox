@@ -1,0 +1,79 @@
+### sb-version-sandbox — baseline (main) walkthrough
+### Use with the IntelliJ HTTP client or the VS Code "REST Client" extension.
+### On main there is NO version field yet. Switch to an approach/* branch to see versioning behaviour.
+@host = http://localhost:8080
+
+############################################################
+# 1. Basic CRUD via MongoRepository
+############################################################
+
+### List seeded products (baseline: no version field)
+GET {{host}}/api/products
+
+### Create a product
+POST {{host}}/api/products
+Content-Type: application/json
+
+{
+  "name": "Wireless Mouse",
+  "category": "electronics",
+  "price": 39.90,
+  "stock": 40
+}
+
+### Fetch one (paste an id from the list)
+GET {{host}}/api/products/PUT_ID_HERE
+
+### Raw stored BSON — confirms there is no "version" field on the baseline
+GET {{host}}/api/products/PUT_ID_HERE/raw
+
+### Update it (last-write-wins; no version written on the baseline)
+PUT {{host}}/api/products/PUT_ID_HERE
+Content-Type: application/json
+
+{ "price": 34.90, "stock": 38 }
+
+
+############################################################
+# 2. The repeatable experiment (differs per approach/* branch)
+############################################################
+
+### 2a. Insert a version-less "legacy" document (simulates existing prod data) — copy the id
+POST {{host}}/api/experiments/legacy-doc?name=Legacy%20Widget&category=misc&price=5.00&stock=10
+
+### 2b. Confirm it has no version field
+GET {{host}}/api/products/PUT_LEGACY_ID_HERE/raw
+
+### 2c. Load then save — on main this just succeeds (no version). Branches differ here.
+POST {{host}}/api/experiments/PUT_LEGACY_ID_HERE/load-then-save
+
+### 2d. Race two writers — on main both win in turn (no optimistic locking yet)
+POST {{host}}/api/experiments/PUT_LEGACY_ID_HERE/concurrent-update
+
+### 2e. How many docs still lack a version field
+GET {{host}}/api/status/version-stats
+
+
+############################################################
+# 3. Lower-level MongoTemplate operations
+############################################################
+
+### $inc stock directly
+POST {{host}}/api/experiments/PUT_ID_HERE/inc-stock?delta=5
+
+### $mul prices across a whole category
+POST {{host}}/api/experiments/raise-prices?category=electronics&multiplier=1.10
+
+### Aggregation: counts per category
+GET {{host}}/api/status/count-by-category
+
+### Criteria search
+GET {{host}}/api/products/search?category=electronics&minPrice=20
+
+
+############################################################
+# 4. Start over
+############################################################
+
+### Drop the whole collection (restart the app to re-seed)
+POST {{host}}/api/experiments/reset

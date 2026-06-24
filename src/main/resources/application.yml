@@ -1,0 +1,23 @@
+spring:
+  application:
+    name: sb-version-sandbox
+  data:
+    mongodb:
+      database: sandbox
+      # Host/port are supplied automatically by spring-boot-docker-compose from compose.yaml.
+      # To point at an external Mongo instead, set SPRING_DATA_MONGODB_URI or uncomment:
+      # uri: mongodb://localhost:27017/sandbox
+  docker:
+    compose:
+      enabled: true
+      lifecycle-management: start-and-stop
+
+# Toggle the startup seed data (set false to drive the dataset entirely by hand).
+app:
+  seed:
+    enabled: true
+
+logging:
+  level:
+    # Echo the actual Mongo commands the template/repository issue, so behaviour is visible.
+    org.springframework.data.mongodb.core.MongoTemplate: DEBUG
