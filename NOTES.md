@@ -16,4 +16,4 @@ POST /api/products {...}                                 -> new doc, gets versio
 POST /api/experiments/{newId}/concurrent-update          -> expected: 2nd writer locks
 ```
 
-**Observed:** _(filled in from the live run — see APPROACHES.md matrix on `main`)_
+**Observed (live):** Q1 legacy `load-then-save` → ❌ `DuplicateKeyException` (E11000 dup key on `_id`). Q2 concurrent on the legacy doc → both writers hit the same duplicate-key error. Q3 brand-new doc → stored with `version=0`; concurrent update → 2nd writer gets `OptimisticLockingFailureException`. So legacy docs can never be saved, while new docs lock correctly — exactly the breakage the other branches must beat.
