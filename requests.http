@@ -72,7 +72,51 @@ GET {{host}}/api/products/search?category=electronics&minPrice=20
 
 
 ############################################################
-# 4. Start over
+# 4. Full MongoTemplate update surface (/api/updates)
+############################################################
+
+### upsert with $setOnInsert (update by name, or insert if missing)
+POST {{host}}/api/updates/upsert?name=Wireless%20Mouse&category=electronics&price=29.90&stock=50
+
+### findAndModify — atomic $inc, returns the post-update document
+POST {{host}}/api/updates/PUT_ID_HERE/find-and-modify?delta=3
+
+### findAndReplace — swap the whole document (keeps _id)
+PUT {{host}}/api/updates/PUT_ID_HERE/find-and-replace
+Content-Type: application/json
+
+{ "name": "Replaced Name", "category": "electronics", "price": 49.0, "stock": 5 }
+
+### bulkOps — batched updateMulti + upsert in one round-trip
+POST {{host}}/api/updates/bulk?category=electronics
+
+### Pipeline update ($set computed): inventoryValue = price * stock
+POST {{host}}/api/updates/compute-inventory-value
+
+### $addToSet (no duplicates) — then GET .../raw to see the tags array
+POST {{host}}/api/updates/PUT_ID_HERE/tags/add?tag=clearance
+
+### $push (duplicates allowed)
+POST {{host}}/api/updates/PUT_ID_HERE/tags/push?tag=clearance
+
+### $pull (remove matching entries)
+POST {{host}}/api/updates/PUT_ID_HERE/tags/pull?tag=clearance
+
+### $min — only lowers the price
+POST {{host}}/api/updates/PUT_ID_HERE/min-price?price=1.00
+
+### $currentDate — server stamps updatedAt
+POST {{host}}/api/updates/PUT_ID_HERE/touch
+
+### $unset — drop a field
+POST {{host}}/api/updates/PUT_ID_HERE/unset?field=inventoryValue
+
+### Inspect the result of any of the above
+GET {{host}}/api/products/PUT_ID_HERE/raw
+
+
+############################################################
+# 5. Start over
 ############################################################
 
 ### Drop the whole collection (restart the app to re-seed)

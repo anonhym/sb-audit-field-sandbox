@@ -95,6 +95,18 @@ winning in turn — there's no protection yet. That's the motivation; the branch
 | `GET`  | `/version-stats` | total docs, how many lack `version`, distribution by version value |
 | `GET`  | `/count-by-category` | aggregation pipeline |
 
+### Update surface — `MongoTemplate` (`/api/updates`)
+Exercises the rest of the update API beyond `updateFirst`/`updateMulti`:
+| Method | Path | Operation |
+|--------|------|-----------|
+| `POST` | `/upsert` | `upsert` with `$setOnInsert` |
+| `POST` | `/{id}/find-and-modify` | `findAndModify` (atomic `$inc`, returns new doc) |
+| `PUT`  | `/{id}/find-and-replace` | `findAndReplace` (swap whole doc) |
+| `POST` | `/bulk` | `bulkOps` (batched `updateMulti` + `upsert`) |
+| `POST` | `/compute-inventory-value` | pipeline `AggregationUpdate` (`inventoryValue = price*stock`) |
+| `POST` | `/{id}/tags/add` · `/push` · `/pull` | `$addToSet` · `$push` · `$pull` (schemaless `tags` array) |
+| `POST` | `/{id}/min-price` · `/touch` · `/unset` | `$min` · `$currentDate` · `$unset` |
+
 ## Project layout
 
 ```
