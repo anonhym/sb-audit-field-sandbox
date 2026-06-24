@@ -2,43 +2,70 @@
 
 The constraint: a live `products` collection already holds documents with **no `version` field**, and
 we may **not** run a bulk back-fill. Each branch below adds `@Version` with a different mechanism and
-is judged on three questions:
+is judged on:
 
 1. **Legacy save** — does `load-then-save` on a version-less doc succeed, and what gets written?
-2. **Locking** — do concurrent updates still raise `OptimisticLockingFailureException`?
+2. **Locking** — do concurrent updates raise `OptimisticLockingFailureException`?
 3. **New docs** — do freshly created docs behave normally?
 
-> Status legend: ✅ works · ⚠️ works with caveat · ❌ breaks · ⏳ not yet measured
+> Status legend: ✅ works · ⚠️ works with caveat · ❌ breaks
 
-## Matrix
+## Results (measured live against mongo:8, Spring Boot 4.1)
 
-| Branch | Mechanism | Legacy save | Locking preserved | Notes |
-|--------|-----------|-------------|-------------------|-------|
-| `approach/naive` | `@Version Long` only | ❌ duplicate-key | n/a for legacy | control: this is the breakage to beat |
-| `approach/lazy-on-read` | `AfterConvertCallback` sets `version=0` when null | ⏳ | ⏳ | does the optimistic filter `{version:0}` match a doc with no version field? |
-| `approach/explicit-upsert` | custom `save` → `replaceOne(_id, upsert)` | ⏳ | ⏳ | bypasses `@Version` routing; locking must be hand-rolled |
-| `approach/custom-isnew` | `Product implements Persistable`, `isNew = id==null` | ⏳ | ⏳ | null-version update filter is `{version:null}`, which matches a missing field |
+| Branch | Mechanism | Legacy save (Q1) | Locking | New docs | Verdict |
+|--------|-----------|------------------|---------|----------|---------|
+| `approach/naive` | `@Version` only | ❌ `DuplicateKeyException` (E11000) | new docs only | ✅ | control — broken |
+| `approach/lazy-on-read` | `AfterConvertCallback` sets `version=0` on read | ❌ `OptimisticLockingFailureException` | new docs only | ✅ | **does not solve it** |
+| `approach/custom-isnew` | `Persistable`, `isNew = id==null` | ✅ SAVED → `version=0` | ✅ full | ✅ | **cleanest** ✅ |
+| `approach/explicit-upsert` | custom repo `replaceOne(_id)` | ✅ SAVED → `version=0` | ✅ (from 2nd write) | ✅ | works; more code; ⚠️ first-race |
+| `approach/version-with-backfill` | bulk `$set version=0`, then `@Version` | ✅ | ✅ | ✅ | reference — **forbidden** here |
 
-Findings are filled in from live runs as each branch is built. Each branch also carries its own
-`NOTES.md` with the exact request/response transcript.
+## The key finding: it's all about the optimistic-update filter
 
-## How each branch is exercised
+When Spring Data updates a versioned entity it issues `updateFirst({_id, version: <loaded>}, …)`.
+The deciding fact is a MongoDB equality-match detail:
 
-Identical script on every branch (see `requests.http`):
+- **`{version: null}` matches a document whose `version` field is absent** (null == missing).
+- **`{version: 0}` does NOT** — it only matches a stored `0`.
+
+That single rule explains the whole table:
+
+- **`custom-isnew` ✅** — it changes *only* the new/existing decision and leaves the loaded version
+  `null`. The update filter is `{_id, version: null}`, which matches the legacy doc, so the first
+  save stamps `version = 0` and every subsequent save locks normally. Migrate-on-touch, no back-fill.
+- **`lazy-on-read` ❌** — defaulting the loaded version to `0` makes the filter `{_id, version: 0}`,
+  which *misses* the version-less doc → 0 documents modified → `OptimisticLockingFailureException`.
+  It just trades the duplicate-key error for a lock error; the legacy doc can never be saved this way.
+  (There is no non-null default that works — only `null` matches an absent field, and `null` routes
+  back to an insert. So an `AfterConvertCallback` default is fundamentally incompatible with the
+  no-back-fill constraint.)
+- **`explicit-upsert` ✅⚠️** — sidesteps Spring Data's routing entirely with `replaceOne` keyed on
+  `_id`, so a null version is never mis-routed to an insert. Locking is hand-rolled (filter on
+  `version` when non-null). **Caveat:** the first migrating write of a legacy doc has no prior version
+  to check, so two writers racing on a *not-yet-migrated* doc can both win once; locking holds from
+  the next write on. More moving parts (a custom repository base class) than `custom-isnew`.
+
+## Recommendation
+
+`approach/custom-isnew` is the smallest change that fully works: one interface
+(`Persistable`) on the entity, no extra beans, no custom repository, optimistic locking intact from
+the first write, and legacy documents migrate to `version = 0` the moment they're next saved. The
+one thing to know: `isNew = (id == null)` assumes ids are server-assigned — saving a brand-new entity
+with a *client-supplied* id would be treated as an update.
+
+## How each branch was exercised
+
+Identical probe on every branch (`tmp/probe.sh`, mirrors `requests.http`):
 
 ```
-POST /api/experiments/legacy-doc?name=...   -> id of a version-less doc
-GET  /api/products/{id}/raw                 -> confirm no version field
-POST /api/experiments/{id}/load-then-save   -> Q1: legacy save behaviour
-POST /api/experiments/{id}/concurrent-update-> Q2: locking behaviour
-POST /api/products  + concurrent-update      -> Q3: new-doc behaviour
-GET  /api/status/version-stats              -> how many docs still lack version
+POST /api/experiments/reset
+POST /api/experiments/legacy-doc?name=...      -> version-less doc id
+GET  /api/products/{id}/raw                     -> confirm no version field
+POST /api/experiments/{id}/load-then-save       -> Q1: legacy save
+POST /api/experiments/{id}/concurrent-update    -> Q2: locking
+POST /api/products {...}                         -> new doc
+POST /api/experiments/{newId}/concurrent-update -> Q3: new-doc locking
+GET  /api/status/version-stats                  -> how many docs still lack version
 ```
 
-## Why "no back-fill" is the whole problem
-
-With a back-fill you would `updateMany({version:{$exists:false}}, {$set:{version:0}})` once, and every
-document would then load with a non-null version and update normally. That approach lives on
-`approach/version-with-backfill` for reference. Everything else here is about achieving the same end
-state **lazily / per-document / at the application layer**, because the one-shot bulk write is off
-the table.
+Each branch's `NOTES.md` holds its hypothesis; the measured numbers above come from a full live run.
