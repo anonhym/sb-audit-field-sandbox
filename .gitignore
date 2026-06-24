@@ -36,3 +36,4 @@ build/
 ### Claude Code session state ###
 .remember/
 .claude/
+.playwright-mcp/
