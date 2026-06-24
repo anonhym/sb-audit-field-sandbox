@@ -4,19 +4,18 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
- * The sandbox aggregate — <strong>baseline (no version field)</strong>.
+ * approach/lazy-on-read — {@code @Version} plus an {@code AfterConvertCallback} that defaults a
+ * missing version to {@code 0} as each document is read (see
+ * {@code com.example.versionsandbox.config.VersionDefaultingCallback}).
  *
- * <p>This is "production as it is today": documents are stored with no {@code version} field, and
- * the entity has no {@code @Version} property. Saving an existing document is a plain by-{@code _id}
- * upsert with last-write-wins semantics and <em>no</em> optimistic locking.
- *
- * <p>Each {@code approach/*} branch adds {@code @Version} via a different strategy to migrate the
- * existing version-less documents <em>without a bulk back-fill</em> (a business restriction). The
- * shared test harness in this project never reads {@code version} off this class — it reads it from
- * the stored BSON — so the harness compiles unchanged on this baseline and on every branch.
+ * <p>The idea: if every load fills in {@code version = 0} when the field is absent, the entity is no
+ * longer "new", so {@code save()} should take the update path instead of inserting. Whether that
+ * update actually matches a stored document that has <em>no</em> version field is the thing this
+ * branch is built to measure.
  */
 @Document(collection = "products")
 public class Product {
@@ -31,6 +30,9 @@ public class Product {
     private BigDecimal price;
 
     private int stock;
+
+    @Version
+    private Long version;
 
     private Instant createdAt;
 
@@ -87,6 +89,14 @@ public class Product {
         this.stock = stock;
     }
 
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -105,7 +115,7 @@ public class Product {
 
     @Override
     public String toString() {
-        return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d}"
-                .formatted(id, name, category, price, stock);
+        return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d, version=%s}"
+                .formatted(id, name, category, price, stock, version);
     }
 }
