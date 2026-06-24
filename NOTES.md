@@ -1,28 +1,48 @@
-# approach/explicit-upsert
+# approach/upsert-all-cases
 
-**Mechanism:** `@Version Long` + a custom repository base class
-(`config/UpsertMongoRepository`, wired by `config/MongoRepositoriesConfig` via
-`@EnableMongoRepositories(repositoryBaseClass = …)`). It overrides `save()`:
+Branched from `approach/explicit-upsert`. Goal: cover **every** save shape, including the one no
+other branch handles — a **brand-new document whose id is set before saving** (client-assigned id).
 
-- **id == null** → normal insert (`@Version` sets `version = 0`).
-- **id present** → explicit `replaceOne({_id}, doc, upsert=false)`, keyed on the id, not the version.
-  A legacy doc with no version field is replaced and stamped with `version = 0` — never mis-routed to
-  an insert, so no duplicate key and no back-fill.
+## The ambiguity
 
-Optimistic locking is hand-rolled: when the loaded version is non-null, the replace also filters on
-`version = <loaded>`; a concurrent change yields `matchedCount == 0` → `OptimisticLockingFailureException`.
+A document with `id` set and `version == null` is indistinguishable, from the entity alone, between:
 
-**Trade-off to confirm:** the first migrating write of a legacy doc has no prior version to check, so
-two writers racing on a not-yet-migrated document can both win that first time. Locking applies from
-the next write onward.
+- a **pre-existing legacy** document (must UPDATE / migrate), and
+- a **brand-new** document with a client-assigned id (must INSERT).
 
-**Run it:**
+| Branch | new doc, client-set id | legacy doc | both? |
+|--------|------------------------|------------|-------|
+| naive | ✅ insert | ❌ duplicate-key | no |
+| lazy-on-read | ✅ insert | ❌ optimistic-lock | no |
+| custom-isnew | ❌ optimistic-lock | ✅ migrate | no |
+| explicit-upsert | ❌ optimistic-lock | ✅ migrate | no |
+| **upsert-all-cases** | ✅ insert | ✅ migrate | **yes** |
+
+## Mechanism
+
+Custom repository base class (`config/UpsertMongoRepository`) overriding `save()`:
+
+- **id == null** → normal insert (`@Version` → 0).
+- **id set, version == null** (first write) → `replaceOne({_id}, doc, upsert = true)`. One idempotent
+  operation: replaces a legacy doc if it exists, inserts a client-id doc if it doesn't. Stamps
+  `version = 0`.
+- **id set, version present** → `replaceOne({_id, version}, doc, upsert = false)`; `matchedCount == 0`
+  → `OptimisticLockingFailureException`.
+
+The only change from `explicit-upsert` is `upsert(firstWrite)` instead of `upsert(false)` (and not
+throwing on the first-write path).
+
+**Trade-off (unchanged):** the first write of a not-yet-versioned document has no prior version to
+check, so two writers racing on it can both win that once; optimistic locking applies from the next
+write onward.
+
+## Verify
+
 ```
 ./mvnw spring-boot:run
-POST /api/experiments/legacy-doc?name=Legacy%20Widget   -> id
-POST /api/experiments/{id}/load-then-save               -> expected: SAVED, version=0 stamped
-POST /api/experiments/{id}/load-then-save               -> again: version -> 1
-POST /api/experiments/{id}/concurrent-update             -> 2nd writer locks (after migration)
+POST /api/experiments/save-new-with-id?name=X     -> SAVED, version 0   (new doc, client-set id)
+POST /api/experiments/legacy-doc?name=Y           -> id
+POST /api/experiments/{id}/load-then-save         -> SAVED, version 0   (legacy migrated)
+POST /api/products {...}                           -> SAVED, version 0   (normal new, id==null)
+POST /api/experiments/{id}/concurrent-update      -> 2nd writer locks
 ```
-
-**Observed (live):** Q1 legacy `load-then-save` → ✅ SAVED via `replaceOne({_id})`, `version` stamped to `0` (keyed on `_id`, so a null version is never mis-routed to an insert). Q2 concurrent (post-migration) → 2nd writer `OptimisticLockingFailureException` from the hand-rolled `version` filter. Q3 new doc → locks normally. `version-stats` afterwards: 0 documents missing the field. Works; more moving parts than `custom-isnew` (a custom repository base class). The first-migrating-write race caveat is by design and was not exercised here because Q1 migrates the doc before Q2 runs.
