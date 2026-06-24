@@ -140,6 +140,7 @@
     <a href="#problem">Problem</a>
     <a href="#approaches">Migration approaches</a>
     <a href="#why">Why it works</a>
+    <a href="#edgecase">Client-set ids</a>
     <a href="#writepaths">Write-path versioning</a>
     <a href="#guard">Version guard</a>
   </div>
@@ -149,10 +150,10 @@
 
   <section id="problem">
     <h2><span class="dot"></span>The problem</h2>
-    <p class="lede">Naively adding <code>@Version</code> breaks existing data: a document with no <code>version</code> field loads as <code>version = null</code>, Spring Data decides the entity "is new", routes <code>save()</code> to an <b>insert</b>, and the existing <code>_id</code> throws a duplicate-key error. The usual fix — a one-shot back-fill that sets <code>version = 0</code> everywhere — is <b>off the table</b>. Each approach below copes with version-less documents at read/write time instead. Tested live on <code>main</code> + five branches.</p>
+    <p class="lede">Naively adding <code>@Version</code> breaks existing data: a document with no <code>version</code> field loads as <code>version = null</code>, Spring Data decides the entity "is new", routes <code>save()</code> to an <b>insert</b>, and the existing <code>_id</code> throws a duplicate-key error. The usual fix — a one-shot back-fill that sets <code>version = 0</code> everywhere — is <b>off the table</b>. Each approach below copes with version-less documents at read/write time instead. Tested live on <code>main</code> + six branches.</p>
     <div class="callout">
       <span class="pill ok">recommended</span>
-      <div><b>custom-isnew</b> is the smallest change that fully works: implement <code>Persistable</code> so the new-vs-existing decision is keyed on the <em>id</em>, leaving the loaded version <code>null</code>. Legacy docs then migrate to <code>version&nbsp;0</code> on first save, with optimistic locking intact from the first write.</div>
+      <div>If ids are <b>server-assigned</b> (Mongo <code>ObjectId</code>), <b>custom-isnew</b> is the smallest change that works: implement <code>Persistable</code> so the new-vs-existing decision is keyed on the <em>id</em>, leaving the loaded version <code>null</code>; legacy docs migrate to <code>version&nbsp;0</code> on first save. If code ever <b>sets the id before saving</b> (UUIDs, business keys), that approach mis-fires — use <b>upsert-all-cases</b>, the only branch that covers every save shape. See <a href="#edgecase">client-set ids</a>.</div>
     </div>
   </section>
 
@@ -227,15 +228,36 @@ concurrent (post-migration):
         <div class="rows">
           <div class="row"><span class="k">Legacy save</span><span class="pill ok">✓ migrates → v0</span></div>
           <div class="row"><span class="k">Locking</span><span class="pill ok">✓ full</span></div>
-          <div class="row"><span class="k">Verdict</span><span class="pill ok">cleanest</span></div>
+          <div class="row"><span class="k">Client-set id</span><span class="pill bad">✗ optimistic-lock</span></div>
+          <div class="row"><span class="k">Verdict</span><span class="pill ok">cleanest — server ids</span></div>
         </div>
         <details><summary>Observed (live)</summary><div class="body">
           <pre>load-then-save (legacy):
 { "storedVersionBefore": null,
   "outcome": "SAVED", "storedVersionAfter": 0 }
 concurrent: { "writerB": "OPTIMISTIC_LOCK_FAILURE" }
-version-stats: { "missingVersionField": 0 }</pre>
-          <p class="note">Loaded version stays <code>null</code>, so the update filter <code>{_id, version:null}</code> matches the legacy doc. One interface, no extra beans, locking from the first write. Assumes server-assigned ids.</p>
+save-new-with-id (client-set id):
+{ "outcome": "FAILED",
+  "exception": "OptimisticLockingFailureException" }</pre>
+          <p class="note">Loaded version stays <code>null</code>, so <code>{_id, version:null}</code> matches the legacy doc — one interface, no extra beans, locking from the first write. <b>But</b> a brand-new doc with a preset id (<code>id != null</code>) is also treated as existing → no match → fails. Fine when ids are server-assigned; see <a href="#edgecase">upsert-all-cases</a> otherwise.</p>
+        </div></details>
+      </article>
+
+      <article class="card star">
+        <h3>upsert-all-cases <span class="tag rec">all cases</span></h3>
+        <p class="mech"><code>replaceOne(_id, upsert)</code> on the first write.</p>
+        <div class="rows">
+          <div class="row"><span class="k">Legacy save</span><span class="pill ok">✓ migrates → v0</span></div>
+          <div class="row"><span class="k">Client-set id</span><span class="pill ok">✓ inserts → v0</span></div>
+          <div class="row"><span class="k">Locking</span><span class="pill ok">✓ from 2nd write</span></div>
+          <div class="row"><span class="k">Verdict</span><span class="pill ok">covers everything</span></div>
+        </div>
+        <details><summary>Observed (live)</summary><div class="body">
+          <pre>save-new-with-id:      SAVED, version 0
+  (same doc again):    SAVED, version 1
+legacy load-then-save: SAVED, version 0
+concurrent: { "writerB": "OPTIMISTIC_LOCK_FAILURE" }</pre>
+          <p class="note">From <code>explicit-upsert</code>, one line changed: for the version-null first write, <code>replaceOne({_id})</code> with <code>upsert=true</code> — replaces a legacy doc if present, inserts a client-id doc if not. Covers id-null insert, client-set-id insert, legacy migrate, and versioned update with locking.</p>
         </div></details>
       </article>
 
@@ -278,6 +300,29 @@ version-stats: { "missingVersionField": 0 }</pre>
         → <b>lazy-on-read</b> sets it to <code>0</code> → filter misses → fails. No non-null default can win, because only <code>null</code> matches an absent field and <code>null</code> routes back to an insert. <br>
         → <b>explicit-upsert</b> sidesteps the filter entirely by keying on <code>_id</code>.
       </p>
+    </div>
+  </section>
+
+  <section id="edgecase">
+    <h2><span class="dot"></span>Edge case: client-assigned ids</h2>
+    <p class="lede">A document with <code>id</code> set but <code>version == null</code> is ambiguous: it could be a pre-existing <b>legacy</b> doc (must UPDATE) or a brand-new doc whose id was <b>set in code before saving</b> (must INSERT). You can't tell from the entity alone — and it splits the field in two.</p>
+    <table>
+      <thead><tr><th>Branch</th><th>New doc · client-set id</th><th>Legacy doc</th><th>Both?</th></tr></thead>
+      <tbody>
+        <tr><td class="op">naive</td><td class="st"><span class="pill ok">✓ insert</span></td><td class="st"><span class="pill bad">✗ duplicate-key</span></td><td class="st"><span class="pill bad">no</span></td></tr>
+        <tr><td class="op">lazy-on-read</td><td class="st"><span class="pill ok">✓ insert</span></td><td class="st"><span class="pill bad">✗ optimistic-lock</span></td><td class="st"><span class="pill bad">no</span></td></tr>
+        <tr><td class="op">custom-isnew</td><td class="st"><span class="pill bad">✗ optimistic-lock</span></td><td class="st"><span class="pill ok">✓ migrate</span></td><td class="st"><span class="pill bad">no</span></td></tr>
+        <tr><td class="op">explicit-upsert</td><td class="st"><span class="pill bad">✗ optimistic-lock</span></td><td class="st"><span class="pill ok">✓ migrate</span></td><td class="st"><span class="pill bad">no</span></td></tr>
+        <tr><td class="op">upsert-all-cases</td><td class="st"><span class="pill ok">✓ insert</span></td><td class="st"><span class="pill ok">✓ migrate</span></td><td class="st"><span class="pill ok">yes</span></td></tr>
+      </tbody>
+    </table>
+    <div class="insight" style="margin-top:18px">
+      <h3>The fix — one idempotent upsert</h3>
+      <p class="note">In <code>upsert-all-cases</code>, the version-null "first write" keys on <code>_id</code> with <code>upsert = true</code> (the only change from <code>explicit-upsert</code>):</p>
+      <pre style="margin-top:10px">boolean firstWrite = (loadedVersion == null);
+replaceOne(eq("_id", id), doc, new ReplaceOptions().upsert(firstWrite));
+if (!firstWrite &amp;&amp; matchedCount == 0) throw new OptimisticLockingFailureException(...);</pre>
+      <p class="note">→ legacy doc present → <b>replaced</b> (migrated). → not present → <b>inserted</b> (new client-id doc). Either way: no duplicate key, no spurious lock failure. Versioned writes keep their <code>version</code> filter, so optimistic locking is intact from the second write onward.</p>
     </div>
   </section>
 
@@ -329,7 +374,7 @@ version-stats: { "missingVersionField": 0 }</pre>
 
 <footer>
   <div class="wrap">
-    <div>Branches: <code>main</code> · <code>approach/naive</code> · <code>lazy-on-read</code> · <code>explicit-upsert</code> · <code>custom-isnew</code> · <code>version-with-backfill</code> · <code>feature/version-guard</code></div>
+    <div>Branches: <code>main</code> · <code>approach/naive</code> · <code>lazy-on-read</code> · <code>explicit-upsert</code> · <code>custom-isnew</code> · <code>upsert-all-cases</code> · <code>version-with-backfill</code> · <code>feature/version-guard</code></div>
     <div>Generated 2026-06-24 · all results measured live against mongo:8</div>
   </div>
 </footer>
