@@ -21,4 +21,4 @@ POST /api/experiments/{id}/load-then-save               -> expected: SAVED, vers
 POST /api/experiments/{id}/concurrent-update             -> expected: 2nd writer locks
 ```
 
-**Observed:** _(filled in from the live run — see APPROACHES.md matrix on `main`)_
+**Observed (live):** Q1 legacy `load-then-save` → ✅ SAVED, `version` stamped to `0`. With the loaded version left `null`, the update filtered on `{_id, version:null}`, which matches the version-less document, so the legacy doc migrated in place with no back-fill. Q2 concurrent (on the now-migrated doc) → 2nd writer `OptimisticLockingFailureException`. Q3 new doc → locks normally. `version-stats` afterwards: 0 documents missing the field. Cleanest result — migrate-on-touch with optimistic locking intact from the first write. Caveat: `isNew = (id == null)` assumes server-assigned ids.
