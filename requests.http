@@ -1,0 +1,93 @@
+### sb-version-sandbox — experiment walkthrough
+### Use with the IntelliJ HTTP client or the VS Code "REST Client" extension.
+@host = http://localhost:8080
+
+############################################################
+# 1. Basic CRUD via MongoRepository (normal versioned path)
+############################################################
+
+### List seeded products (each was inserted with version=0)
+GET {{host}}/api/products
+
+### Create a product -> note "version": 0 in the response
+POST {{host}}/api/products
+Content-Type: application/json
+
+{
+  "name": "Wireless Mouse",
+  "category": "electronics",
+  "price": 39.90,
+  "stock": 40
+}
+
+### Grab an id from the list above, then fetch it
+GET {{host}}/api/products/PUT_ID_HERE
+
+### Update it -> version increments to 1, 2, 3...
+PUT {{host}}/api/products/PUT_ID_HERE
+Content-Type: application/json
+
+{ "price": 34.90, "stock": 38 }
+
+### See the raw stored document (confirms the version field exists)
+GET {{host}}/api/products/PUT_ID_HERE/raw
+
+
+############################################################
+# 2. Optimistic locking
+############################################################
+
+### Two writers race on the same version -> writerB hits OPTIMISTIC_LOCK_FAILURE
+POST {{host}}/api/experiments/PUT_ID_HERE/concurrent-update
+
+
+############################################################
+# 3. Migration path: adding @Version to data that predates it
+############################################################
+
+### 3a. Create a LEGACY document with no version field (copy the returned id)
+POST {{host}}/api/experiments/legacy-doc?name=Legacy%20Widget&category=misc&price=5.00&stock=10
+
+### 3b. Confirm it has no version field
+GET {{host}}/api/products/PUT_LEGACY_ID_HERE/raw
+
+### 3c. Load-then-save the legacy doc -> FAILS with a duplicate-key error
+###     (null version makes Spring Data think it is a new entity -> insert -> dup _id)
+POST {{host}}/api/experiments/PUT_LEGACY_ID_HERE/load-then-save
+
+### 3d. Inspect how many docs are missing the version field
+GET {{host}}/api/migrations/version-stats
+
+### 3e. Run the bulk back-fill: set version=0 where the field is missing
+POST {{host}}/api/migrations/backfill-version
+
+### 3f. Now load-then-save the SAME legacy doc again -> SUCCEEDS, version -> 1
+POST {{host}}/api/experiments/PUT_LEGACY_ID_HERE/load-then-save
+
+### 3g. Confirm every doc now has a version value
+GET {{host}}/api/migrations/version-stats
+
+
+############################################################
+# 4. Lower-level MongoTemplate operations (bypass @Version)
+############################################################
+
+### $inc stock directly (does NOT touch version -> no optimistic locking)
+POST {{host}}/api/experiments/PUT_ID_HERE/inc-stock?delta=5
+
+### $mul prices across a whole category
+POST {{host}}/api/experiments/raise-prices?category=electronics&multiplier=1.10
+
+### Aggregation: counts per category
+GET {{host}}/api/experiments/count-by-category
+
+### Criteria search
+GET {{host}}/api/products/search?category=electronics&minPrice=20
+
+
+############################################################
+# 5. Start over
+############################################################
+
+### Drop the whole collection (restart the app to re-seed)
+POST {{host}}/api/experiments/reset

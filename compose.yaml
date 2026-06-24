@@ -1,0 +1,12 @@
+services:
+  mongodb:
+    image: 'mongo:8'
+    ports:
+      - '27017:27017'
+    environment:
+      - 'MONGO_INITDB_DATABASE=sandbox'
+    volumes:
+      - 'mongo-data:/data/db'
+
+volumes:
+  mongo-data:
