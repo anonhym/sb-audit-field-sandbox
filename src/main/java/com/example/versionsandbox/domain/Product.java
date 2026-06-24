@@ -4,22 +4,27 @@ import java.math.BigDecimal;
 import java.time.Instant;
 
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Version;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
- * The sandbox aggregate — <strong>baseline (no version field)</strong>.
+ * approach/custom-isnew — {@code @Version} plus {@link Persistable}, so the new-vs-existing decision
+ * is driven by the <em>id</em>, not by the version value.
  *
- * <p>This is "production as it is today": documents are stored with no {@code version} field, and
- * the entity has no {@code @Version} property. Saving an existing document is a plain by-{@code _id}
- * upsert with last-write-wins semantics and <em>no</em> optimistic locking.
+ * <p>By default Spring Data treats a null version as "new" and inserts (the {@code approach/naive}
+ * break). Here {@link #isNew()} returns {@code id == null}, so a loaded legacy document — which has
+ * an {@code _id} but no version — is considered existing and {@code save()} takes the update path.
+ * Because the loaded version is {@code null}, the optimistic-update filter is {@code {_id, version:
+ * null}}, and in MongoDB {@code version: null} also matches a document where the field is absent — so
+ * the update finds the legacy document and stamps a version onto it. New documents (id {@code null})
+ * still insert normally.
  *
- * <p>Each {@code approach/*} branch adds {@code @Version} via a different strategy to migrate the
- * existing version-less documents <em>without a bulk back-fill</em> (a business restriction). The
- * shared test harness in this project never reads {@code version} off this class — it reads it from
- * the stored BSON — so the harness compiles unchanged on this baseline and on every branch.
+ * <p>Spring Data MongoDB uses field access, so the parameterless {@link #isNew()} method is not a
+ * persistent property and is never written to the document.
  */
 @Document(collection = "products")
-public class Product {
+public class Product implements Persistable<String> {
 
     @Id
     private String id;
@@ -31,6 +36,9 @@ public class Product {
     private BigDecimal price;
 
     private int stock;
+
+    @Version
+    private Long version;
 
     private Instant createdAt;
 
@@ -47,12 +55,19 @@ public class Product {
         this.stock = stock;
     }
 
+    @Override
     public String getId() {
         return id;
     }
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    /** An entity is new only when it has no id yet; a null version no longer means "new". */
+    @Override
+    public boolean isNew() {
+        return id == null;
     }
 
     public String getName() {
@@ -87,6 +102,14 @@ public class Product {
         this.stock = stock;
     }
 
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -105,7 +128,7 @@ public class Product {
 
     @Override
     public String toString() {
-        return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d}"
-                .formatted(id, name, category, price, stock);
+        return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d, version=%s}"
+                .formatted(id, name, category, price, stock, version);
     }
 }
