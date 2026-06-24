@@ -1,5 +1,6 @@
 package com.example.versionsandbox.service;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -78,6 +79,32 @@ public class ExperimentService {
         result.put("writerB", saveAndReport(writerB, id));
 
         result.put("storedVersionAfter", mongoTemplateService.storedVersion(id));
+        return result;
+    }
+
+    /**
+     * Save a <em>brand-new</em> document whose id is set by the caller before saving (e.g. a UUID or
+     * client-assigned key). The document does not exist yet, but its id is non-null — the case where
+     * "is this new?" cannot be answered from the entity alone. A correct strategy must INSERT it.
+     */
+    public Map<String, Object> saveNewWithPresetId(String name, String category, BigDecimal price, int stock) {
+        String id = new org.bson.types.ObjectId().toHexString();
+        Product product = new Product(id, name, category, price, stock);
+        Instant now = Instant.now();
+        product.setCreatedAt(now);
+        product.setUpdatedAt(now);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("presetId", id);
+        try {
+            repository.save(product);
+            result.put("outcome", "SAVED");
+            result.put("storedVersionAfter", mongoTemplateService.storedVersion(id));
+        } catch (RuntimeException ex) {
+            result.put("outcome", "FAILED");
+            result.put("exception", ex.getClass().getName());
+            result.put("message", rootMessage(ex));
+        }
         return result;
     }
 

@@ -55,6 +55,18 @@ public class ExperimentController {
         return experimentService.simulateConcurrentUpdate(id);
     }
 
+    /**
+     * Save a brand-new document whose id is set <em>before</em> saving (client-assigned id). The doc
+     * is new but its id is non-null — the case a version-based "is new?" check can get wrong.
+     */
+    @PostMapping("/save-new-with-id")
+    public Map<String, Object> saveNewWithId(@RequestParam String name,
+                                             @RequestParam(defaultValue = "misc") String category,
+                                             @RequestParam(defaultValue = "9.99") BigDecimal price,
+                                             @RequestParam(defaultValue = "1") int stock) {
+        return experimentService.saveNewWithPresetId(name, category, price, stock);
+    }
+
     // ---- Lower-level MongoTemplate update operations ----
 
     @PostMapping("/{id}/inc-stock")
