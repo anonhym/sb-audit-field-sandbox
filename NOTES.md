@@ -25,4 +25,4 @@ POST /api/experiments/{id}/load-then-save               -> again: version -> 1
 POST /api/experiments/{id}/concurrent-update             -> 2nd writer locks (after migration)
 ```
 
-**Observed:** _(filled in from the live run — see APPROACHES.md matrix on `main`)_
+**Observed (live):** Q1 legacy `load-then-save` → ✅ SAVED via `replaceOne({_id})`, `version` stamped to `0` (keyed on `_id`, so a null version is never mis-routed to an insert). Q2 concurrent (post-migration) → 2nd writer `OptimisticLockingFailureException` from the hand-rolled `version` filter. Q3 new doc → locks normally. `version-stats` afterwards: 0 documents missing the field. Works; more moving parts than `custom-isnew` (a custom repository base class). The first-migrating-write race caveat is by design and was not exercised here because Q1 migrates the doc before Q2 runs.
