@@ -18,7 +18,13 @@ is judged on:
 | `approach/lazy-on-read` | `AfterConvertCallback` sets `version=0` on read | ❌ `OptimisticLockingFailureException` | new docs only | ✅ | **does not solve it** |
 | `approach/custom-isnew` | `Persistable`, `isNew = id==null` | ✅ SAVED → `version=0` | ✅ full | ✅ | **cleanest** ✅ |
 | `approach/explicit-upsert` | custom repo `replaceOne(_id)` | ✅ SAVED → `version=0` | ✅ (from 2nd write) | ✅ | works; more code; ⚠️ first-race |
+| `approach/upsert-all-cases` | `replaceOne(_id, upsert)` on first write | ✅ SAVED → `version=0` | ✅ (from 2nd write) | ✅ **+ client-set id** | **covers every save shape** ✅ |
 | `approach/version-with-backfill` | bulk `$set version=0`, then `@Version` | ✅ | ✅ | ✅ | reference — **forbidden** here |
+
+> **The client-assigned-id case:** a *new* document whose id is set before saving. `custom-isnew` and
+> `explicit-upsert` both mis-classify it as an update and throw `OptimisticLockingFailureException`;
+> only `approach/upsert-all-cases` (upsert on the version-null first write) inserts it correctly while
+> still migrating legacy docs. See its `NOTES.md`.
 
 ## The key finding: it's all about the optimistic-update filter
 
@@ -47,11 +53,18 @@ That single rule explains the whole table:
 
 ## Recommendation
 
-`approach/custom-isnew` is the smallest change that fully works: one interface
-(`Persistable`) on the entity, no extra beans, no custom repository, optimistic locking intact from
-the first write, and legacy documents migrate to `version = 0` the moment they're next saved. The
-one thing to know: `isNew = (id == null)` assumes ids are server-assigned — saving a brand-new entity
-with a *client-supplied* id would be treated as an update.
+Pick by id strategy:
+
+- **Server-assigned ids (Mongo `ObjectId`)** → **`approach/custom-isnew`**: the smallest change that
+  works — one interface (`Persistable`) on the entity, no extra beans, no custom repository, optimistic
+  locking intact from the first write, and legacy documents migrate to `version = 0` the moment they're
+  next saved.
+- **Client-assigned ids (UUID/business key set before save)** → **`approach/upsert-all-cases`**: the
+  only strategy that also inserts a brand-new doc whose id is pre-set (custom-isnew mis-treats that as
+  an update). Costs a custom repository base class.
+
+Both migrate legacy docs without a back-fill and preserve optimistic locking; choose `custom-isnew`
+unless the code ever sets ids before saving.
 
 ## How each branch was exercised
 
