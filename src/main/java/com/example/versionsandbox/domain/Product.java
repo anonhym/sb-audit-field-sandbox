@@ -8,6 +8,7 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.Version;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
@@ -40,6 +41,15 @@ public class Product {
     private BigDecimal price;
 
     private int stock;
+
+    /**
+     * Optimistic-locking version. Nullable {@code Long} on purpose: a legacy document written before
+     * this field existed loads as {@code null}, and the {@code upsert-all-cases} repository strategy
+     * relies on that null to migrate the doc to {@code version = 0} on its next save without a
+     * back-fill (the update filter {@code {_id, version:null}} matches an absent field).
+     */
+    @Version
+    private Long version;
 
     @CreatedDate
     private Instant createdAt;
@@ -102,6 +112,14 @@ public class Product {
 
     public void setStock(int stock) {
         this.stock = stock;
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 
     public Instant getCreatedAt() {
