@@ -78,6 +78,15 @@ and throws. Use the custom repository base class instead (templates: `UpsertMong
 No per-entity change beyond the `@Version` field (the recipe adds it). Wire it once with
 `@EnableMongoRepositories(repositoryBaseClass = UpsertMongoRepository.class)`.
 
+**Audit fields on the upsert path — don't miss this.** The template routes everything *except* the
+ambiguous `version-null + id-set` case through stock `save()`, where Spring Data auditing fires
+normally. Only that one case uses a custom `replace`, which **bypasses auditing** — so the template
+sets the audit fields itself there: `@LastModified*` always, `@Created*` only when the document doesn't
+already exist (a single `exists()` check). Critically it does this **before** stamping the non-null
+version, because auditing/`isNew` consider an entity with a version non-new and would skip `@Created*`.
+The audit setters no-op on non-audited entities, so the class is safe for version-only collections too.
+(custom-isnew has no such concern — it never bypasses `save()`, so auditing always fires.)
+
 ## Gotchas (true on every strategy)
 
 - **New entity with id + a non-null version (doc doesn't exist) → `OptimisticLockingFailureException`,
