@@ -8,6 +8,8 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
+import org.springframework.data.annotation.Version;
+import org.springframework.data.domain.Persistable;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
@@ -28,7 +30,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
  * template update methods, but it does NOT apply auditing on those same methods.
  */
 @Document(collection = "products")
-public class Product {
+public class Product implements Persistable<String> {
 
     @Id
     private String id;
@@ -53,6 +55,9 @@ public class Product {
     @LastModifiedBy
     private String updatedBy;
 
+    @Version
+    private Long version;
+
     public Product() {
     }
 
@@ -64,12 +69,23 @@ public class Product {
         this.stock = stock;
     }
 
+    @Override
     public String getId() {
         return id;
     }
 
     public void setId(String id) {
         this.id = id;
+    }
+
+    /**
+     * An entity is new only when it has no id yet; a null {@code version} no longer means "new".
+     * This lets {@code save()} treat a loaded legacy (version-less) document as an update — the
+     * {@code {_id, version:null}} filter matches the existing doc and stamps {@code version = 0}.
+     */
+    @Override
+    public boolean isNew() {
+        return id == null;
     }
 
     public String getName() {
@@ -140,5 +156,13 @@ public class Product {
     public String toString() {
         return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d, createdBy=%s, updatedBy=%s}"
                 .formatted(id, name, category, price, stock, createdBy, updatedBy);
+    }
+
+    public Long getVersion() {
+        return version;
+    }
+
+    public void setVersion(Long version) {
+        this.version = version;
     }
 }

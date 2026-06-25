@@ -1,0 +1,3 @@
+#
+#Thu Jun 25 12:02:47 EDT 2026
+no\ classes\ should\ call\ method\ where\ target\ MongoOperations.findAndReplace(..)\ or\ bulkOps(..),\ because\ findAndReplace\ resets\ created\ fields\ /\ drops\ @Version;\ bulkOps\ maintains\ neither\ \u2014\ prefer\ save()/findAndModify,\ or\ add\ .inc("version",1)\ and\ the\ audit\ fields\ explicitly=7166f4e2-8ace-4e34-aada-3ea784056930
