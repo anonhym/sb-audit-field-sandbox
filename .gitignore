@@ -35,5 +35,7 @@ build/
 
 ### Claude Code session state ###
 .remember/
-.claude/
+.claude/*
+# ...but DO track the committed skill(s) so they ship with the repo
+!.claude/skills/
 .playwright-mcp/

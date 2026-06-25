@@ -1,0 +1,43 @@
+#
+# Declarative entry points for the mechanical half of the Spring Data MongoDB audit/version refactor.
+#
+# These compose the two imperative recipes in this module. Activate the one you need with the
+# rewrite-maven-plugin, e.g.:
+#
+#   mvn -U org.openrewrite.maven:rewrite-maven-plugin:run \
+#       -Drewrite.activeRecipes=com.example.rewrite.AddMongoAuditAndVersionFields
+#
+# (the recipe module must be a plugin <dependency> — see the skill's references/openrewrite.md).
+#
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.example.rewrite.AddMongoAuditAndVersionFields
+displayName: Add @Version + audit fields to @Document classes
+description: >-
+  Adds the nullable @Version field and the four audit fields (createdAt/createdBy,
+  updatedAt/updatedBy) to every @Document class that is missing them. This is only the mechanical,
+  per-entity part of the refactor — the auditing configuration, the AOP aspect that maintains the
+  fields on MongoTemplate writes, the ArchUnit rules, and the optimistic-locking migration strategy
+  are added separately (see the skill).
+recipeList:
+  - com.example.rewrite.AddVersionField
+  - com.example.rewrite.AddAuditFields
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.example.rewrite.AddMongoAuditFieldsOnly
+displayName: Add audit fields to @Document classes (no @Version)
+description: >-
+  Adds only the four audit fields (createdAt/createdBy, updatedAt/updatedBy) to every @Document
+  class that is missing them. Use when a collection needs auditing but not optimistic locking.
+recipeList:
+  - com.example.rewrite.AddAuditFields
+---
+type: specs.openrewrite.org/v1beta/recipe
+name: com.example.rewrite.AddMongoVersionFieldOnly
+displayName: Add @Version to @Document classes (no audit fields)
+description: >-
+  Adds only the nullable @Version field to every @Document class that is missing it. Use when a
+  collection needs optimistic locking but already has (or does not need) audit fields. Remember to
+  pair this with a no-back-fill migration strategy — see the skill.
+recipeList:
+  - com.example.rewrite.AddVersionField

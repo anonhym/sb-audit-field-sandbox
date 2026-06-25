@@ -1,0 +1,23 @@
+{
+  "skill_name": "spring-mongo-audit-version",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Our Spring Boot 4.1 + Spring Data MongoDB service needs optimistic locking and audit fields. Every persisted document should have a @Version plus the four audit fields createdAt/createdBy/updatedAt/updatedBy, kept correct on EVERY write path (not just save()). We may NOT bulk back-fill existing data — going forward only, migrating documents lazily as they are next written. Add build-time and runtime guarantees so it can't silently regress. Touch only the code that must change; list anything else you notice rather than fixing it.",
+      "expected_output": "Each @Document declares the five fields with correct annotations; a no-back-fill version strategy is wired (custom-isnew for the sandbox's server-assigned ids); audit fields are maintained on MongoTemplate writes via an AOP aspect; ArchUnit + a Testcontainers behavioural test are added; the app compiles and tests pass; a report is produced with a 'flagged but not changed' section. No bulk back-fill is performed.",
+      "files": [],
+      "expectations": [
+        "Every @Document class (Product, Order) declares version + createdAt + createdBy + updatedAt + updatedBy with @Version/@CreatedDate/@CreatedBy/@LastModifiedDate/@LastModifiedBy",
+        "A no-back-fill version migration strategy is wired (Persistable/isNew for server ids, or a custom upsert repository for client ids) — not a bulk $set or AfterConvertCallback default to 0",
+        "An AOP aspect maintains audit fields on the MongoTemplate update paths (updateFirst/updateMulti/upsert/findAndModify)",
+        "AspectJ dependency (org.aspectj:aspectjweaver) is added since spring-boot-starter-aop is gone in Boot 4",
+        "An ArchUnit test enforces that every @Document declares the audit (and version) fields",
+        "A Testcontainers behavioural test verifies version increments and audit fields are maintained across write paths",
+        "`./mvnw compile` succeeds and the recipe-generated code is valid",
+        "No bulk back-fill / mass document update is performed on existing data",
+        "The final report includes a section listing things noticed but deliberately NOT changed (scope discipline)",
+        "Only files necessary for the five fields and their guarantees were changed (no unrelated refactors)"
+      ]
+    }
+  ]
+}

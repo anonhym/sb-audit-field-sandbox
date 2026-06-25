@@ -17,6 +17,19 @@ the final code. Each finding below was run against a real `mongo:8`.
 - **Java** 21 · **Build** Maven (`./mvnw`) · **Mongo** auto-started via Spring Boot Docker Compose
 - Verified identical on **Spring Boot 4.0.7** (Spring Data 5.0.6) **and 4.1.0** (5.1.0).
 
+## ▶ The refactor skill (the payoff)
+
+This knowledge base now ships an executable **Claude Code skill** that *performs* the refactor on a real
+app: [`.claude/skills/spring-mongo-audit-version/`](.claude/skills/spring-mongo-audit-version/SKILL.md).
+
+It adds the five fields (`@Version` + the four audit fields), maintained on every write path, with **no
+back-fill** — driving the mechanical edits with a bundled **OpenRewrite** recipe (`assets/rewrite-recipes/`,
+its own tests green) and adding **AOP + ArchUnit** guarantees, touching only what must change and
+reporting everything else it notices. It was validated end to end: an independent agent following only
+the skill refactored a legacy app (branch `skill-test/legacy-app` → `skill-test/eval-withskill`) to a
+compiling, **7/7 green** state (ArchUnit + Testcontainers behavioural tests). The skill's `references/`
+hold the distilled reasoning; `assets/` hold the recipe module + drop-in templates.
+
 ## TL;DR findings
 
 **Version (no back-fill):**
@@ -53,6 +66,7 @@ the final code. Each finding below was run against a real `mongo:8`.
 
 | Doc | What it covers |
 |-----|----------------|
+| [`.claude/skills/spring-mongo-audit-version/`](.claude/skills/spring-mongo-audit-version/SKILL.md) | **The executable refactor skill** — OpenRewrite recipe + AOP/ArchUnit templates + workflow |
 | [`MIGRATION-PLAN.md`](MIGRATION-PLAN.md) | **The refactor knowledge base** — plan, decision trees, gotchas (read first) |
 | [`APPROACHES.md`](APPROACHES.md) | Version strategies: the matrix, the `{version:null}` insight, the recommendation |
 | [`VERSION-WRITES.md`](VERSION-WRITES.md) | Which write paths maintain `@Version` (Spring Data 5.x) + the two gaps |
