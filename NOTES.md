@@ -1,24 +1,20 @@
-# approach/custom-isnew
+# scenarios/refactor-fixes
 
-**Mechanism:** `@Version Long` + `Product implements Persistable<String>` with
-`isNew() == (id == null)`. The new-vs-existing decision is taken from the id, not the version.
+The runnable companion to [`REFACTOR-SCENARIOS.md`](REFACTOR-SCENARIOS.md) (on `main`). Branched off
+`approach/custom-isnew`, so `Product` has `@Version` + `Persistable` — the post-refactor state.
 
-**Hypothesis:** a loaded legacy document has an `_id` but a null version. With `isNew()` keyed on the
-id, it is treated as existing, so `save()` takes the versioned update path. The loaded version is
-`null`, so the update filter is `{_id, version: null}` — and in MongoDB `version: null` matches a
-document where the field is **absent** — so the update finds the legacy doc and writes a version
-onto it. No back-fill, no duplicate key. New docs (id null) still insert.
+`src/test/java/.../scenarios/RefactorScenariosTest` encodes the breakage catalog as **Testcontainers**
+integration tests (real `mongo:8`). Each test asserts the **broken** pattern fails and the **fixed**
+pattern works:
 
-**Watch for:** what version value the first update writes (0 or 1), and whether concurrent updates on
-an already-migrated doc still raise `OptimisticLockingFailureException`. Edge case: saving a
-hand-constructed entity with a non-null id that does *not* exist would be treated as an update.
+| Test | Scenario | Broken → Fixed |
+|------|----------|----------------|
+| V1 | fabricated "existing" entity (preset id+version) | `OptimisticLockingFailureException` → insert then load-modify-save |
+| V2 | legacy version-less doc | migrates to `version 0` (custom-isnew), not duplicate-key |
+| V3 | concurrent modification | `OptimisticLockingFailureException` → optimistic-retry loop |
+| V4 | stale/detached entity | `OptimisticLockingFailureException` → reload before save |
+| V5 | version field assertions | present & increments (was asserted null) |
+| V6 | new entity with id + non-null version | `OptimisticLockingFailureException` → null version on new objects |
 
-**Run it:**
-```
-./mvnw spring-boot:run
-POST /api/experiments/legacy-doc?name=Legacy%20Widget   -> id
-POST /api/experiments/{id}/load-then-save               -> expected: SAVED, version stamped
-POST /api/experiments/{id}/concurrent-update             -> expected: 2nd writer locks
-```
-
-**Observed (live):** Q1 legacy `load-then-save` → ✅ SAVED, `version` stamped to `0`. With the loaded version left `null`, the update filtered on `{_id, version:null}`, which matches the version-less document, so the legacy doc migrated in place with no back-fill. Q2 concurrent (on the now-migrated doc) → 2nd writer `OptimisticLockingFailureException`. Q3 new doc → locks normally. `version-stats` afterwards: 0 documents missing the field. Cleanest result — migrate-on-touch with optimistic locking intact from the first write. Caveat: `isNew = (id == null)` assumes server-assigned ids.
+Run: `./mvnw test -Dtest=RefactorScenariosTest` (needs Docker). Testcontainers is **2.0.5** (Boot 4.1
+manages it) — note the 2.x module names `testcontainers-junit-jupiter` / `testcontainers-mongodb`.
