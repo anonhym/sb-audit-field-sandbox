@@ -57,6 +57,7 @@ the final code. Each finding below was run against a real `mongo:8`.
 | [`APPROACHES.md`](APPROACHES.md) | Version strategies: the matrix, the `{version:null}` insight, the recommendation |
 | [`VERSION-WRITES.md`](VERSION-WRITES.md) | Which write paths maintain `@Version` (Spring Data 5.x) + the two gaps |
 | [`AUDIT.md`](AUDIT.md) | Audit baseline: the three failure modes + the AOP/ArchUnit paths |
+| [`REFACTOR-SCENARIOS.md`](REFACTOR-SCENARIOS.md) | What breaks in existing tests/code when you enable `@Version`/audit, classified (test bug vs real bug) + the fix |
 | [`report.html`](report.html) | Visual report of the **version** investigation (open in a browser) |
 | each branch's `NOTES.md` | the hypothesis + measured transcript for that branch |
 

@@ -140,7 +140,7 @@ Neither alone is complete.
 |-------|-------|
 | **0 Discovery** | the six items above; pick a version strategy per collection |
 | **1 Implement** | add `@Version` (+ chosen strategy) and the 4 audit fields + `@EnableMongoAuditing`; add the AOP audit aspect; remediate `bulkOps`/`findAndReplace`; add OLFE handling at call sites |
-| **2 Validate** | port the sandbox probes to staging on prod-like data (legacy migrate, concurrent lock, client-set-id, id+version boundary, audit per write path); **test the rolling-deploy window** |
+| **2 Validate** | run the existing suite; fix the fallout using [`REFACTOR-SCENARIOS.md`](REFACTOR-SCENARIOS.md) (test bug vs real bug); port the sandbox probes to staging on prod-like data (legacy migrate, concurrent lock, client-set-id, id+version boundary, audit per write path); **test the rolling-deploy window** |
 | **3 Rollout** | instrument first, deploy (lazy migration), watch OLFE rate + field coverage |
 | **4 Closeout** | document rollback; decide cold-doc convergence (accept lazy, or trickle) |
 
