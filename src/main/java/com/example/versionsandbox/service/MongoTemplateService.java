@@ -91,6 +91,26 @@ public class MongoTemplateService {
         return doc == null ? null : doc.get("version");
     }
 
+    /**
+     * The four audit fields exactly as stored (read from BSON, not the mapped entity), so the harness
+     * can show which write paths actually populate/refresh them.
+     */
+    public Map<String, Object> auditFields(String id) {
+        Document doc = mongoTemplate.getCollection(COLLECTION)
+                .find(new Document("_id", new org.bson.types.ObjectId(id)))
+                .first();
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (doc == null) {
+            out.put("found", false);
+            return out;
+        }
+        out.put("createdAt", doc.get("createdAt"));
+        out.put("createdBy", doc.get("createdBy"));
+        out.put("updatedAt", doc.get("updatedAt"));
+        out.put("updatedBy", doc.get("updatedBy"));
+        return out;
+    }
+
     /** Render an {@code ObjectId} {@code _id} as its hex string so JSON output stays readable. */
     private static Document readableId(Document doc) {
         if (doc != null && doc.get("_id") instanceof org.bson.types.ObjectId oid) {

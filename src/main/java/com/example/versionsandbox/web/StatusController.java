@@ -6,6 +6,7 @@ import java.util.Map;
 import com.example.versionsandbox.service.MongoTemplateService;
 import org.bson.Document;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -34,5 +35,11 @@ public class StatusController {
     @GetMapping("/count-by-category")
     public List<Document> countByCategory() {
         return mongoTemplateService.countByCategory();
+    }
+
+    /** The four audit fields exactly as stored — to see which write paths maintained them. */
+    @GetMapping("/audit/{id}")
+    public Map<String, Object> audit(@PathVariable String id) {
+        return mongoTemplateService.auditFields(id);
     }
 }

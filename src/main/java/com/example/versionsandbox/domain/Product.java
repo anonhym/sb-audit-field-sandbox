@@ -3,20 +3,29 @@ package com.example.versionsandbox.domain;
 import java.math.BigDecimal;
 import java.time.Instant;
 
+import org.springframework.data.annotation.CreatedBy;
+import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.LastModifiedBy;
+import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 /**
- * The sandbox aggregate — <strong>baseline (no version field)</strong>.
+ * The sandbox aggregate — <strong>audit baseline</strong>.
  *
- * <p>This is "production as it is today": documents are stored with no {@code version} field, and
- * the entity has no {@code @Version} property. Saving an existing document is a plain by-{@code _id}
- * upsert with last-write-wins semantics and <em>no</em> optimistic locking.
+ * <p>Carries the four audit fields ({@code createdAt}, {@code createdBy}, {@code updatedAt},
+ * {@code updatedBy}) wired to Spring Data's auditing annotations. With {@code @EnableMongoAuditing}
+ * active (see {@code config.AuditingConfig}) these are populated automatically — but <em>only on the
+ * {@code save()} / entity-conversion path</em>. The lower-level {@code MongoTemplate} writes
+ * ({@code updateFirst}, {@code updateMulti}, {@code upsert}, {@code findAndModify}, {@code bulkOps},
+ * {@code findAndReplace}) do <em>not</em> trigger auditing, so they leave these fields stale.
  *
- * <p>Each {@code approach/*} branch adds {@code @Version} via a different strategy to migrate the
- * existing version-less documents <em>without a bulk back-fill</em> (a business restriction). The
- * shared test harness in this project never reads {@code version} off this class — it reads it from
- * the stored BSON — so the harness compiles unchanged on this baseline and on every branch.
+ * <p>This is the same kind of baseline used for the version investigation: the harness reads the audit
+ * fields from the stored BSON (not off this class), so it can show which write paths maintain them.
+ * The {@code archunit/*} and {@code aop/*} branches then make the audit fields impossible to forget.
+ *
+ * <p>Note the asymmetry with {@code @Version}: Spring Data 5.x auto-increments the version on the
+ * template update methods, but it does NOT apply auditing on those same methods.
  */
 @Document(collection = "products")
 public class Product {
@@ -32,9 +41,17 @@ public class Product {
 
     private int stock;
 
+    @CreatedDate
     private Instant createdAt;
 
+    @CreatedBy
+    private String createdBy;
+
+    @LastModifiedDate
     private Instant updatedAt;
+
+    @LastModifiedBy
+    private String updatedBy;
 
     public Product() {
     }
@@ -95,6 +112,14 @@ public class Product {
         this.createdAt = createdAt;
     }
 
+    public String getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(String createdBy) {
+        this.createdBy = createdBy;
+    }
+
     public Instant getUpdatedAt() {
         return updatedAt;
     }
@@ -103,9 +128,17 @@ public class Product {
         this.updatedAt = updatedAt;
     }
 
+    public String getUpdatedBy() {
+        return updatedBy;
+    }
+
+    public void setUpdatedBy(String updatedBy) {
+        this.updatedBy = updatedBy;
+    }
+
     @Override
     public String toString() {
-        return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d}"
-                .formatted(id, name, category, price, stock);
+        return "Product{id=%s, name=%s, category=%s, price=%s, stock=%d, createdBy=%s, updatedBy=%s}"
+                .formatted(id, name, category, price, stock, createdBy, updatedBy);
     }
 }

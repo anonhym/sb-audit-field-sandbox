@@ -1,6 +1,5 @@
 package com.example.versionsandbox.service;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -9,8 +8,8 @@ import com.example.versionsandbox.repository.ProductRepository;
 import org.springframework.stereotype.Service;
 
 /**
- * Repository-driven CRUD. Every {@code save()} here runs through Spring Data's version routing,
- * so this is the "normal application code" half of the sandbox.
+ * Repository-driven CRUD. Every {@code save()} here runs through Spring Data auditing, so the four
+ * audit fields are populated automatically — no manual timestamp/user wiring needed on this path.
  */
 @Service
 public class ProductService {
@@ -22,11 +21,8 @@ public class ProductService {
     }
 
     public Product create(Product product) {
-        Instant now = Instant.now();
         product.setId(null);
-        product.setCreatedAt(now);
-        product.setUpdatedAt(now);
-        return repository.save(product);
+        return repository.save(product); // @CreatedDate/@CreatedBy/@LastModified* set by auditing
     }
 
     public List<Product> findAll() {
@@ -41,11 +37,7 @@ public class ProductService {
         return repository.findByCategory(category);
     }
 
-    /**
-     * Load-modify-save. On the baseline this is a last-write-wins by-{@code _id} upsert. On the
-     * {@code approach/*} branches the added version field turns this into a checked update that can
-     * throw {@code OptimisticLockingFailureException}.
-     */
+    /** Load-modify-save through the repository — the one write path Spring Data auditing covers. */
     public Product update(String id, Product changes) {
         Product existing = repository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("No product with id " + id));
@@ -59,8 +51,7 @@ public class ProductService {
             existing.setPrice(changes.getPrice());
         }
         existing.setStock(changes.getStock());
-        existing.setUpdatedAt(Instant.now());
-        return repository.save(existing);
+        return repository.save(existing); // @LastModifiedDate/@LastModifiedBy refreshed by auditing
     }
 
     public void deleteById(String id) {
